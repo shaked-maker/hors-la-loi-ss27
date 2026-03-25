@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HORS LA LOI — SS27 Flatlay Generator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+    body { font-family: 'Inter', sans-serif; background: #f5f5f3; }
+
+    .card { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04); }
+
+    .tab-btn { transition: all .15s; }
+    .tab-btn.active { background: #111; color: #fff; }
+    .tab-btn:not(.active):hover { background: #e5e5e5; }
+
+    .prompt-textarea {
+      resize: none;
+      font-size: 12px;
+      line-height: 1.6;
+      font-family: 'Inter', monospace;
+      color: #333;
+      background: #fafafa;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      width: 100%;
+      min-height: 200px;
+      transition: border-color .15s;
+    }
+    .prompt-textarea:focus { outline: none; border-color: #aaa; }
+
+    .copy-btn {
+      background: #111;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background .15s, transform .1s;
+    }
+    .copy-btn:hover { background: #333; }
+    .copy-btn:active { transform: scale(.97); }
+    .copy-btn.copied { background: #16a34a; }
+
+    .generate-btn {
+      background: #f0f0f0;
+      color: #444;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background .15s;
+      width: 100%;
+    }
+    .generate-btn:hover:not(:disabled) { background: #e0e0e0; }
+    .generate-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .upload-zone {
+      border: 2px dashed #d0d0d0;
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+      background: #fafafa;
+    }
+    .upload-zone:hover { border-color: #999; background: #f3f3f3; }
+    .upload-zone.dragover { border-color: #111; background: #f0f0f0; }
+    .upload-zone.has-result { border-color: #16a34a; background: #f0fdf4; }
+
+    .spinner {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border: 2px solid #aaa;
+      border-top-color: #333;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .badge {
+      display: inline-block;
+      background: #f0f0f0;
+      color: #666;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .05em;
+      padding: 2px 8px;
+      border-radius: 20px;
+      text-transform: uppercase;
+    }
+    .badge.femme { background: #fce7f3; color: #9d174d; }
+    .badge.homme { background: #dbeafe; color: #1e40af; }
+
+    .generate-all-btn {
+      background: #111;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 22px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .generate-all-btn:hover:not(:disabled) { background: #333; }
+    .generate-all-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .progress-bar {
+      height: 3px;
+      background: #e0e0e0;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: #111;
+      transition: width .3s ease;
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-gray-200 sticky top-0 z-10">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
+      <div>
+        <h1 class="text-lg font-semibold tracking-tight text-gray-900">HORS LA LOI</h1>
+        <p class="text-xs text-gray-400 tracking-widest uppercase">SS27 — Flatlay Prompt Generator</p>
+      </div>
+
+      <div class="flex items-center gap-3 flex-wrap">
+        <!-- Tabs -->
+        <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
+          <button id="tab-femme" class="tab-btn active text-sm font-medium px-4 py-1.5 rounded-md" onclick="switchTab('femme')">Femme</button>
+          <button id="tab-homme" class="tab-btn text-sm font-medium px-4 py-1.5 rounded-md" onclick="switchTab('homme')">Homme</button>
+        </div>
+
+        <!-- Generate All -->
+        <button id="generate-all-btn" class="generate-all-btn" onclick="generateAll()">
+          Generate All Prompts
+        </button>
+      </div>
+    </div>
+
+    <!-- Progress bar -->
+    <div id="progress-bar" class="progress-bar" style="display:none">
+      <div id="progress-bar-fill" class="progress-bar-fill" style="width:0%"></div>
+    </div>
+  </header>
+
+  <!-- Status message -->
+  <div id="status-msg" class="max-w-7xl mx-auto px-6 pt-3 text-sm text-gray-500" style="display:none"></div>
+
+  <!-- Grid -->
+  <main class="max-w-7xl mx-auto px-6 py-8">
+    <div id="grid-femme" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+    <div id="grid-homme" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" style="display:none"></div>
+    <div id="empty-msg" class="text-center text-gray-400 py-16 text-sm" style="display:none">No garments found. Check the <code>client assets/</code> folder.</div>
+  </main>
+
+  <script>
+    let allGarments = [];
+    let currentTab = 'femme';
+
+    // ─── Init ────────────────────────────────────────────────
+    async function init() {
+      const res = await fetch('/api/garments');
+      allGarments = await res.json();
+
+      if (!allGarments.length) {
+        document.getElementById('empty-msg').style.display = 'block';
+        return;
+      }
+
+      renderGrid('femme');
+      renderGrid('homme');
+    }
+
+    // ─── Tab switching ────────────────────────────────────────
+    function switchTab(tab) {
+      currentTab = tab;
+      document.getElementById('grid-femme').style.display = tab === 'femme' ? '' : 'none';
+      document.getElementById('grid-homme').style.display = tab === 'homme' ? '' : 'none';
+      document.getElementById('tab-femme').classList.toggle('active', tab === 'femme');
+      document.getElementById('tab-homme').classList.toggle('active', tab === 'homme');
+    }
+
+    // ─── Render grid ─────────────────────────────────────────
+    function renderGrid(collection) {
+      const grid = document.getElementById(`grid-${collection}`);
+      grid.innerHTML = '';
+      const items = allGarments.filter(g => g.collection === collection);
+      if (!items.length) return;
+      items.forEach(g => grid.appendChild(buildCard(g)));
+    }
+
+    function buildCard(g) {
+      const cacheKey = g.cache_key;
+      const div = document.createElement('div');
+      div.className = 'card';
+      div.id = `card-${cacheKey.replace(/[^a-zA-Z0-9]/g, '-')}`;
+
+      const hasPrompt = !!g.prompt;
+      const hasResult = !!g.result_file;
+      const displayCode = g.model_code || g.filename.replace('@3x-100.jpg', '');
+
+      div.innerHTML = `
+        <!-- Image -->
+        <div class="relative">
+          <img src="/images/${g.collection}/${encodeURIComponent(g.filename)}"
+               alt="${displayCode}"
+               class="w-full object-contain bg-gray-50"
+               style="max-height:320px; object-fit:contain;" />
+        </div>
+
+        <!-- Body -->
+        <div class="p-4 space-y-3">
+          <!-- Header row -->
+          <div class="flex items-center justify-between gap-2">
+            <span id="code-${cacheKey.replace(/[^a-zA-Z0-9]/g, '-')}" class="font-semibold text-sm text-gray-900">${displayCode}</span>
+            <span class="badge ${g.collection}">${g.collection}</span>
+          </div>
+
+          <!-- Prompt section -->
+          <div id="prompt-section-${cacheKey.replace(/[^a-zA-Z0-9]/g, '-')}">
+            ${hasPrompt ? promptHTML(g, cacheKey) : generateBtnHTML(cacheKey, g.collection, g.filename)}
+          </div>
+
+          <!-- Result upload section -->
+          <div>
+            <p class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1.5">Finished Result</p>
+            <div id="upload-zone-${cacheKey.replace(/[^a-zA-Z0-9]/g, '-')}"
+                 class="upload-zone ${hasResult ? 'has-result' : ''}"
+                 onclick="triggerUpload('${cacheKey}')"
+                 ondragover="onDragOver(event, '${cacheKey}')"
+                 ondragleave="onDragLeave('${cacheKey}')"
+                 ondrop="onDrop(event, '${cacheKey}', '${g.collection}', '${encodeURIComponent(g.filename)}')">
+              ${hasResult
+                ? `<img src="/results/${g.result_file}" class="max-h-40 mx-auto rounded object-contain" alt="Result" />
+                   <p class="text-xs text-green-600 font-medium mt-2">${g.result_file}</p>`
+                : `<svg class="mx-auto mb-2 text-gray-300" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+                   <p class="text-xs text-gray-400">Drop finished flatlay here or click to upload</p>`
+              }
+            </div>
+            <input type="file" id="file-input-${cacheKey.replace(/[^a-zA-Z0-9]/g, '-')}"
+                   accept="image/*" style="display:none"
+                   onchange="handleFileInput(event, '${cacheKey}', '${g.collection}', '${encodeURIComponent(g.filename)}')" />
+          </div>
+        </div>
+      `;
+      return div;
+    }
+
+    function promptHTML(g, cacheKey) {
+      const safeKey = cacheKey.replace(/[^a-zA-Z0-9]/g, '-');
+      return `
+        <textarea id="prompt-ta-${safeKey}" class="prompt-textarea">${escHtml(g.prompt)}</textarea>
+        <div class="flex gap-2 mt-2">
+          <button id="copy-btn-${safeKey}" class="copy-btn" onclick="copyPrompt('${safeKey}')">Copy Prompt</button>
+          <button class="generate-btn" style="width:auto; padding: 6px 10px;" onclick="generateSingle('${cacheKey}', '${g.collection}', '${encodeURIComponent(g.filename)}', true)" title="Regenerate">↺</button>
+        </div>
+      `;
+    }
+
+    function generateBtnHTML(cacheKey, collection, filename) {
+      const safeKey = cacheKey.replace(/[^a-zA-Z0-9]/g, '-');
+      return `
+        <button id="gen-btn-${safeKey}" class="generate-btn"
+                onclick="generateSingle('${cacheKey}', '${collection}', '${encodeURIComponent(filename)}', false)">
+          Generate Prompt
+        </button>
+      `;
+    }
+
+    // ─── Copy ─────────────────────────────────────────────────
+    function copyPrompt(safeKey) {
+      const ta = document.getElementById(`prompt-ta-${safeKey}`);
+      const btn = document.getElementById(`copy-btn-${safeKey}`);
+      navigator.clipboard.writeText(ta.value).then(() => {
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy Prompt'; btn.classList.remove('copied'); }, 1800);
+      });
+    }
+
+    // ─── Generate single ─────────────────────────────────────
+    async function generateSingle(cacheKey, collection, filenameEncoded, force) {
+      const filename = decodeURIComponent(filenameEncoded);
+      const safeKey = cacheKey.replace(/[^a-zA-Z0-9]/g, '-');
+      const section = document.getElementById(`prompt-section-${safeKey}`);
+      const codeEl = document.getElementById(`code-${safeKey}`);
+
+      // Show spinner
+      section.innerHTML = `<div class="generate-btn" style="cursor:default;"><span class="spinner"></span>Analyzing with Claude…</div>`;
+
+      try {
+        const res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ collection, filename, force }),
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          section.innerHTML = `<p class="text-xs text-red-500">${escHtml(data.error)}</p>${generateBtnHTML(cacheKey, collection, filenameEncoded)}`;
+          return;
+        }
+
+        // Update in-memory data
+        const garment = allGarments.find(g => g.cache_key === cacheKey);
+        if (garment) {
+          garment.prompt = data.prompt;
+          garment.model_code = data.model_code;
+        }
+
+        if (data.model_code && codeEl) codeEl.textContent = data.model_code;
+        section.innerHTML = promptHTML({ prompt: data.prompt }, cacheKey);
+
+      } catch (e) {
+        section.innerHTML = `<p class="text-xs text-red-500">Error: ${escHtml(e.message)}</p>${generateBtnHTML(cacheKey, collection, filenameEncoded)}`;
+      }
+    }
+
+    // ─── Generate All ─────────────────────────────────────────
+    async function generateAll() {
+      const btn = document.getElementById('generate-all-btn');
+      const progressBar = document.getElementById('progress-bar');
+      const progressFill = document.getElementById('progress-bar-fill');
+      const statusMsg = document.getElementById('status-msg');
+
+      const pending = allGarments.filter(g => !g.prompt);
+      if (!pending.length) {
+        showStatus('All prompts are already generated.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner"></span>Generating…`;
+      progressBar.style.display = 'block';
+
+      for (let i = 0; i < pending.length; i++) {
+        const g = pending[i];
+        const pct = Math.round((i / pending.length) * 100);
+        progressFill.style.width = pct + '%';
+        showStatus(`Generating ${i + 1} / ${pending.length}: ${g.filename}`);
+        await generateSingle(g.cache_key, g.collection, encodeURIComponent(g.filename), false);
+        // small delay to avoid rate limits
+        await sleep(300);
+      }
+
+      progressFill.style.width = '100%';
+      showStatus(`Done! Generated ${pending.length} prompt${pending.length !== 1 ? 's' : ''}.`);
+      btn.disabled = false;
+      btn.textContent = 'Generate All Prompts';
+      setTimeout(() => { progressBar.style.display = 'none'; }, 1500);
+    }
+
+    // ─── Upload ───────────────────────────────────────────────
+    function triggerUpload(cacheKey) {
+      const safeKey = cacheKey.replace(/[^a-zA-Z0-9]/g, '-');
+      document.getElementById(`file-input-${safeKey}`).click();
+    }
+
+    function onDragOver(event, cacheKey) {
+      event.preventDefault();
+      const safeKey = cacheKey.replace(/[^a-zA-Z0-9]/g, '-');
+      document.getElementById(`upload-zone-${safeKey}`).classList.add('dragover');
+    }
+
+    function onDragLeave(cacheKey) {
+      const safeKey = cacheKey.replace(/[^a-zA-Z0-9]/g, '-');
+      document.getElementById(`upload-zone-${safeKey}`).classList.remove('dragover');
+    }
+
+    function onDrop(event, cacheKey, collection, filenameEncoded) {
+      event.preventDefault();
+      onDragLeave(cacheKey);
+      const file = event.dataTransfer.files[0];
+      if (file) uploadFile(file, cacheKey, collection, filenameEncoded);
+    }
+
+    function handleFileInput(event, cacheKey, collection, filenameEncoded) {
+      const file = event.target.files[0];
+      if (file) uploadFile(file, cacheKey, collection, filenameEncoded);
+    }
+
+    async function uploadFile(file, cacheKey, collection, filenameEncoded) {
+      const filename = decodeURIComponent(filenameEncoded);
+      const safeKey = cacheKey.replace(/[^a-zA-Z0-9]/g, '-');
+      const zone = document.getElementById(`upload-zone-${safeKey}`);
+
+      zone.innerHTML = `<span class="spinner"></span><span class="text-xs text-gray-400">Uploading…</span>`;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch(`/api/upload/${collection}/${encodeURIComponent(filename)}`, {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          zone.innerHTML = `<p class="text-xs text-red-500">${escHtml(data.error)}</p>`;
+          return;
+        }
+
+        // Update garment in memory
+        const garment = allGarments.find(g => g.cache_key === cacheKey);
+        if (garment) garment.result_file = data.result_file;
+
+        zone.classList.add('has-result');
+        zone.innerHTML = `
+          <img src="${data.url}?t=${Date.now()}" class="max-h-40 mx-auto rounded object-contain" alt="Result" />
+          <p class="text-xs text-green-600 font-medium mt-2">${data.result_file}</p>
+        `;
+      } catch (e) {
+        zone.innerHTML = `<p class="text-xs text-red-500">Upload failed: ${escHtml(e.message)}</p>`;
+      }
+    }
+
+    // ─── Utils ────────────────────────────────────────────────
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    function showStatus(msg) {
+      const el = document.getElementById('status-msg');
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
+
+    function escHtml(str) {
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ─── Start ────────────────────────────────────────────────
+    init();
+  </script>
+</body>
+</html>
