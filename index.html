@@ -129,9 +129,11 @@
   <script>
     const SUPABASE_URL = 'https://owdwcqxiavwejkocbtqp.supabase.co';
     const SUPABASE_KEY = 'sb_publishable_8bE4iRj0KUmZynK9uxqCww_lUUwyNhP';
+    const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im93ZHdjcXhpYXZ3ZWprb2NidHFwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDQzMDkyMCwiZXhwIjoyMDkwMDA2OTIwfQ.9m3poyA957nZDEJkynqGf0k93HRDCONdhJGKRt4VM5U';
 
     const { createClient } = supabase;
     const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+    const dbAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
     let allGarments = [];
 
@@ -285,8 +287,8 @@
         ? `${garment.model_code}.${ext}`
         : `${cacheKey.replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
 
-      // Upload to Supabase Storage
-      const { error: uploadError } = await db.storage
+      // Upload to Supabase Storage (using service role to bypass RLS)
+      const { error: uploadError } = await dbAdmin.storage
         .from('results')
         .upload(storageName, file, { contentType: file.type, upsert: true });
 
@@ -295,7 +297,7 @@
         return;
       }
 
-      const { data: urlData } = db.storage.from('results').getPublicUrl(storageName);
+      const { data: urlData } = dbAdmin.storage.from('results').getPublicUrl(storageName);
       const publicUrl = urlData.publicUrl;
 
       // Save URL to garments table
