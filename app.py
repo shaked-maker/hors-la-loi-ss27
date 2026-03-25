@@ -88,7 +88,10 @@ def api_garments():
 
 @app.route("/images/<collection>/<path:filename>")
 def serve_image(collection, filename):
-    """Serve CAD images locally (files are on disk)."""
+    """Redirect to Supabase Storage public URL if available, else serve locally."""
+    res = supabase.table("garments").select("cad_image_url").eq("collection", collection).eq("filename", filename).single().execute()
+    if res.data and res.data.get("cad_image_url"):
+        return redirect(res.data["cad_image_url"])
     path = ASSETS_DIR / collection / filename
     if not path.exists():
         return "Not found", 404
