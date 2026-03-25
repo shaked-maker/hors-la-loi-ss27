@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HORS LA LOI — SS27 Flatlay Generator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+    body { font-family: 'Inter', sans-serif; background: #f5f5f3; }
+
+    .card { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04); }
+
+    .tab-btn { transition: all .15s; }
+    .tab-btn.active { background: #111; color: #fff; }
+    .tab-btn:not(.active):hover { background: #e5e5e5; }
+
+    .prompt-textarea {
+      resize: none;
+      font-size: 12px;
+      line-height: 1.6;
+      font-family: 'Inter', monospace;
+      color: #333;
+      background: #fafafa;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      width: 100%;
+      min-height: 200px;
+      transition: border-color .15s;
+    }
+    .prompt-textarea:focus { outline: none; border-color: #aaa; }
+
+    .copy-btn {
+      background: #111;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background .15s, transform .1s;
+    }
+    .copy-btn:hover { background: #333; }
+    .copy-btn:active { transform: scale(.97); }
+    .copy-btn.copied { background: #16a34a; }
+
+    .upload-zone {
+      border: 2px dashed #d0d0d0;
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+      background: #fafafa;
+    }
+    .upload-zone:hover { border-color: #999; background: #f3f3f3; }
+    .upload-zone.dragover { border-color: #111; background: #f0f0f0; }
+    .upload-zone.has-result { border-color: #16a34a; background: #f0fdf4; }
+
+    .spinner {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border: 2px solid #aaa;
+      border-top-color: #333;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .badge {
+      display: inline-block;
+      background: #f0f0f0;
+      color: #666;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: .05em;
+      padding: 2px 8px;
+      border-radius: 20px;
+      text-transform: uppercase;
+    }
+    .badge.femme { background: #fce7f3; color: #9d174d; }
+    .badge.homme { background: #dbeafe; color: #1e40af; }
+
+    .progress-bar {
+      height: 3px;
+      background: #e0e0e0;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: #111;
+      transition: width .3s ease;
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-gray-200 sticky top-0 z-10">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
+      <div>
+        <h1 class="text-lg font-semibold tracking-tight text-gray-900">HORS LA LOI</h1>
+        <p class="text-xs text-gray-400 tracking-widest uppercase">SS27 — Flatlay Prompt Generator</p>
+      </div>
+      <div class="flex gap-1 bg-gray-100 rounded-lg p-1">
+        <button id="tab-femme" class="tab-btn active text-sm font-medium px-4 py-1.5 rounded-md" onclick="switchTab('femme')">Femme</button>
+        <button id="tab-homme" class="tab-btn text-sm font-medium px-4 py-1.5 rounded-md" onclick="switchTab('homme')">Homme</button>
+      </div>
+    </div>
+    <div id="progress-bar" class="progress-bar" style="display:none">
+      <div id="progress-bar-fill" class="progress-bar-fill" style="width:0%"></div>
+    </div>
+  </header>
+
+  <div id="status-msg" class="max-w-7xl mx-auto px-6 pt-3 text-sm text-gray-500" style="display:none"></div>
+
+  <main class="max-w-7xl mx-auto px-6 py-8">
+    <div id="loading" class="text-center text-gray-400 py-16 text-sm">Loading garments…</div>
+    <div id="grid-femme" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" style="display:none"></div>
+    <div id="grid-homme" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" style="display:none"></div>
+  </main>
+
+  <script>
+    const SUPABASE_URL = 'https://owdwcqxiavwejkocbtqp.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_8bE4iRj0KUmZynK9uxqCww_lUUwyNhP';
+
+    const { createClient } = supabase;
+    const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let allGarments = [];
+
+    // ─── Init ────────────────────────────────────────────────
+    async function init() {
+      const { data, error } = await db
+        .from('garments')
+        .select('*')
+        .order('collection')
+        .order('filename');
+
+      document.getElementById('loading').style.display = 'none';
+
+      if (error || !data?.length) {
+        document.getElementById('loading').textContent = 'No garments found.';
+        document.getElementById('loading').style.display = 'block';
+        return;
+      }
+
+      allGarments = data.map(row => ({
+        collection: row.collection,
+        filename: row.filename,
+        cache_key: `${row.collection}/${row.filename}`,
+        model_code: row.model_code || '',
+        prompt: row.prompt || '',
+        result_url: row.result_url || '',
+        cad_image_url: row.cad_image_url || '',
+      }));
+
+      renderGrid('femme');
+      renderGrid('homme');
+      document.getElementById('grid-femme').style.display = '';
+    }
+
+    // ─── Tab switching ────────────────────────────────────────
+    function switchTab(tab) {
+      document.getElementById('grid-femme').style.display = tab === 'femme' ? '' : 'none';
+      document.getElementById('grid-homme').style.display = tab === 'homme' ? '' : 'none';
+      document.getElementById('tab-femme').classList.toggle('active', tab === 'femme');
+      document.getElementById('tab-homme').classList.toggle('active', tab === 'homme');
+    }
+
+    // ─── Render grid ─────────────────────────────────────────
+    function renderGrid(collection) {
+      const grid = document.getElementById(`grid-${collection}`);
+      grid.innerHTML = '';
+      allGarments.filter(g => g.collection === collection).forEach(g => grid.appendChild(buildCard(g)));
+    }
+
+    function safeKey(cacheKey) {
+      return cacheKey.replace(/[^a-zA-Z0-9]/g, '-');
+    }
+
+    function buildCard(g) {
+      const sk = safeKey(g.cache_key);
+      const displayCode = g.model_code || g.filename.replace('@3x-100.jpg', '');
+      const div = document.createElement('div');
+      div.className = 'card';
+      div.id = `card-${sk}`;
+
+      div.innerHTML = `
+        <div class="relative">
+          <img src="${escHtml(g.cad_image_url)}"
+               alt="${escHtml(displayCode)}"
+               class="w-full object-contain bg-gray-50"
+               style="max-height:320px; object-fit:contain;" />
+        </div>
+        <div class="p-4 space-y-3">
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-semibold text-sm text-gray-900">${escHtml(displayCode)}</span>
+            <span class="badge ${g.collection}">${g.collection}</span>
+          </div>
+
+          ${g.prompt ? `
+            <textarea class="prompt-textarea" id="prompt-ta-${sk}">${escHtml(g.prompt)}</textarea>
+            <div class="flex gap-2 mt-2">
+              <button id="copy-btn-${sk}" class="copy-btn" onclick="copyPrompt('${sk}')">Copy Prompt</button>
+            </div>
+          ` : `<p class="text-xs text-gray-400 italic">No prompt available.</p>`}
+
+          <div>
+            <p class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1.5">Finished Result</p>
+            <div id="upload-zone-${sk}"
+                 class="upload-zone ${g.result_url ? 'has-result' : ''}"
+                 onclick="triggerUpload('${sk}')"
+                 ondragover="onDragOver(event,'${sk}')"
+                 ondragleave="onDragLeave('${sk}')"
+                 ondrop="onDrop(event,'${g.cache_key}')">
+              ${g.result_url
+                ? `<img src="${escHtml(g.result_url)}" class="max-h-40 mx-auto rounded object-contain" alt="Result" />
+                   <p class="text-xs text-green-600 font-medium mt-2">Uploaded ✓</p>`
+                : `<svg class="mx-auto mb-2 text-gray-300" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
+                   <p class="text-xs text-gray-400">Drop finished flatlay here or click to upload</p>`
+              }
+            </div>
+            <input type="file" id="file-input-${sk}" accept="image/*" style="display:none"
+                   onchange="handleFileInput(event,'${g.cache_key}')" />
+          </div>
+        </div>
+      `;
+      return div;
+    }
+
+    // ─── Copy ─────────────────────────────────────────────────
+    function copyPrompt(sk) {
+      const ta = document.getElementById(`prompt-ta-${sk}`);
+      const btn = document.getElementById(`copy-btn-${sk}`);
+      navigator.clipboard.writeText(ta.value).then(() => {
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy Prompt'; btn.classList.remove('copied'); }, 1800);
+      });
+    }
+
+    // ─── Upload ───────────────────────────────────────────────
+    function triggerUpload(sk) {
+      document.getElementById(`file-input-${sk}`).click();
+    }
+
+    function onDragOver(event, sk) {
+      event.preventDefault();
+      document.getElementById(`upload-zone-${sk}`).classList.add('dragover');
+    }
+
+    function onDragLeave(sk) {
+      document.getElementById(`upload-zone-${sk}`).classList.remove('dragover');
+    }
+
+    function onDrop(event, cacheKey) {
+      event.preventDefault();
+      const sk = safeKey(cacheKey);
+      onDragLeave(sk);
+      const file = event.dataTransfer.files[0];
+      if (file) uploadFile(file, cacheKey);
+    }
+
+    function handleFileInput(event, cacheKey) {
+      const file = event.target.files[0];
+      if (file) uploadFile(file, cacheKey);
+    }
+
+    async function uploadFile(file, cacheKey) {
+      const sk = safeKey(cacheKey);
+      const zone = document.getElementById(`upload-zone-${sk}`);
+      const garment = allGarments.find(g => g.cache_key === cacheKey);
+
+      zone.innerHTML = `<span class="spinner"></span><span class="text-xs text-gray-400">Uploading…</span>`;
+
+      const ext = file.name.split('.').pop() || 'jpg';
+      const storageName = garment?.model_code
+        ? `${garment.model_code}.${ext}`
+        : `${cacheKey.replace(/[^a-zA-Z0-9]/g, '_')}.${ext}`;
+
+      // Upload to Supabase Storage
+      const { error: uploadError } = await db.storage
+        .from('results')
+        .upload(storageName, file, { contentType: file.type, upsert: true });
+
+      if (uploadError) {
+        zone.innerHTML = `<p class="text-xs text-red-500">Upload failed: ${escHtml(uploadError.message)}</p>`;
+        return;
+      }
+
+      const { data: urlData } = db.storage.from('results').getPublicUrl(storageName);
+      const publicUrl = urlData.publicUrl;
+
+      // Save URL to garments table
+      const [collection, ...filenameParts] = cacheKey.split('/');
+      const filename = filenameParts.join('/');
+      await db.from('garments')
+        .update({ result_url: publicUrl })
+        .eq('collection', collection)
+        .eq('filename', filename);
+
+      if (garment) garment.result_url = publicUrl;
+
+      zone.classList.add('has-result');
+      zone.innerHTML = `
+        <img src="${escHtml(publicUrl)}?t=${Date.now()}" class="max-h-40 mx-auto rounded object-contain" alt="Result" />
+        <p class="text-xs text-green-600 font-medium mt-2">Uploaded ✓</p>
+      `;
+    }
+
+    // ─── Utils ────────────────────────────────────────────────
+    function escHtml(str) {
+      return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    init();
+  </script>
+</body>
+</html>
