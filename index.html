@@ -149,21 +149,7 @@
     </div>
   </header>
 
-  <!-- API Key Modal -->
-  <div id="api-modal" class="api-modal-overlay" style="display:none">
-    <div class="api-modal">
-      <h2 style="font-size:15px;font-weight:600;margin-bottom:6px;">Anthropic API Key</h2>
-      <p style="font-size:12px;color:#666;margin-bottom:16px;">Required once to analyze new garments with Claude. Stored only in your browser.</p>
-      <input id="api-key-input" type="password" placeholder="sk-ant-..."
-        style="width:100%;border:1px solid #ddd;border-radius:6px;padding:8px 10px;font-size:13px;margin-bottom:12px;box-sizing:border-box;" />
-      <div style="display:flex;gap:8px;justify-content:flex-end;">
-        <button onclick="closeApiModal()" style="background:#f0f0f0;border:none;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer;">Cancel</button>
-        <button onclick="saveApiKey()" style="background:#111;color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer;">Save & Continue</button>
-      </div>
-    </div>
-  </div>
-
-  <div id="status-msg" class="max-w-7xl mx-auto px-6 pt-3 text-sm text-gray-500" style="display:none"></div>
+<div id="status-msg" class="max-w-7xl mx-auto px-6 pt-3 text-sm text-gray-500" style="display:none"></div>
 
   <main class="max-w-7xl mx-auto px-6 py-8">
     <div id="loading" class="text-center text-gray-400 py-16 text-sm">Loading garments…</div>
@@ -181,7 +167,6 @@
     const dbAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
     let allGarments = [];
-    let pendingAddCollection = null;
 
     const EXTRACTION_SYSTEM = `You are a fashion technical analyst. You analyze CAD spec sheets for garments.
 You will receive two images:
@@ -416,49 +401,18 @@ MODEL_CODE: <the code from the spec sheet top-left box, e.g. HLK4401.QAFF>`;
       `;
     }
 
-    // ─── API Key Modal ────────────────────────────────────────
+    // ─── Add Garment Flow ─────────────────────────────────────
     function triggerAddGarment(collection) {
-      const apiKey = localStorage.getItem('anthropic_api_key');
-      if (!apiKey) {
-        pendingAddCollection = collection;
-        document.getElementById('api-modal').style.display = 'flex';
-        setTimeout(() => document.getElementById('api-key-input').focus(), 100);
-        return;
-      }
       document.getElementById(`add-input-${collection}`).click();
     }
 
-    function closeApiModal() {
-      document.getElementById('api-modal').style.display = 'none';
-      document.getElementById('api-key-input').value = '';
-      pendingAddCollection = null;
-    }
-
-    function saveApiKey() {
-      const key = document.getElementById('api-key-input').value.trim();
-      if (!key) return;
-      localStorage.setItem('anthropic_api_key', key);
-      closeApiModal();
-      if (pendingAddCollection) {
-        document.getElementById(`add-input-${pendingAddCollection}`).click();
-      }
-    }
-
-    // ─── Add Garment Flow ─────────────────────────────────────
     async function handleAddGarment(event, collection) {
       const file = event.target.files[0];
       if (!file) return;
       event.target.value = '';
 
-      const apiKey = localStorage.getItem('anthropic_api_key');
-      if (!apiKey) return;
-
       const addCard = document.getElementById(`add-card-${collection}`);
-      const setStatus = (msg) => {
-        addCard.innerHTML = `<div style="text-align:center;padding:20px;"><span class="spinner"></span><p style="font-size:12px;color:#666;margin-top:8px;">${msg}</p></div>`;
-      };
-
-      setStatus('Uploading CAD image…');
+      addCard.innerHTML = `<div style="text-align:center;padding:20px;"><span class="spinner"></span><p style="font-size:12px;color:#666;margin-top:8px;">Uploading…</p></div>`;
 
       // 1. Upload CAD to Supabase Storage
       const filename = file.name;
@@ -471,69 +425,64 @@ MODEL_CODE: <the code from the spec sheet top-left box, e.g. HLK4401.QAFF>`;
 
       const cadUrl = dbAdmin.storage.from('cad-images').getPublicUrl(storageKey).data.publicUrl;
 
-      // 2. Convert CAD + colors to base64
-      setStatus('Analyzing with Claude…');
-      const cadBase64 = await fileToBase64(file);
-      const content = [
-        { type: 'image', source: { type: 'base64', media_type: file.type || 'image/jpeg', data: cadBase64 } }
-      ];
+      // 2. Show inline form for model code + prompt
+      const tempKey = `${collection}/${filename}`;
+      const sk = safeKey(tempKey);
 
-      try {
-        const colorsUrl = `${SUPABASE_URL}/storage/v1/object/public/cad-images/${collection}/colors.jpg`;
-        const colorsResp = await fetch(colorsUrl);
-        const colorsBlob = await colorsResp.blob();
-        const colorsB64 = await blobToBase64(colorsBlob);
-        content.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: colorsB64 } });
-      } catch(e) {}
+      addCard.className = 'card';
+      addCard.onclick = null;
+      addCard.innerHTML = `
+        <div class="relative">
+          <img src="${escHtml(cadUrl)}" class="w-full object-contain bg-gray-50" style="max-height:320px;object-fit:contain;" />
+        </div>
+        <div class="p-4 space-y-3">
+          <div class="flex items-center gap-2">
+            <input id="new-code-${sk}" type="text" placeholder="Model code (e.g. HLK4401.QAFF)"
+              style="flex:1;border:1px solid #e0e0e0;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;" />
+            <span class="badge ${collection}">${collection}</span>
+          </div>
+          <textarea id="new-prompt-${sk}" class="prompt-textarea" placeholder="Paste prompt here…" style="min-height:160px;"></textarea>
+          <div class="flex gap-2">
+            <button onclick="saveNewGarment('${collection}','${escHtml(filename)}','${escHtml(cadUrl)}','${sk}')"
+              style="background:#111;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:12px;font-weight:500;cursor:pointer;">Save</button>
+            <button onclick="cancelAddGarment('${collection}')"
+              style="background:#f0f0f0;border:none;border-radius:6px;padding:7px 12px;font-size:12px;cursor:pointer;">Cancel</button>
+          </div>
+        </div>
+      `;
+    }
 
-      content.push({ type: 'text', text: EXTRACTION_USER });
+    async function saveNewGarment(collection, filename, cadUrl, sk) {
+      const modelCode = document.getElementById(`new-code-${sk}`).value.trim();
+      const prompt = document.getElementById(`new-prompt-${sk}`).value.trim();
 
-      // 3. Call Claude API
-      let rawResponse;
-      try {
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json',
-            'anthropic-dangerous-direct-browser-usage': 'true'
-          },
-          body: JSON.stringify({
-            model: 'claude-opus-4-6',
-            max_tokens: 1024,
-            system: EXTRACTION_SYSTEM,
-            messages: [{ role: 'user', content }]
-          })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error?.message || 'API error');
-        rawResponse = data.content[0].text.trim();
-      } catch(e) {
-        resetAddCardWithError(addCard, collection, 'Claude error: ' + e.message);
-        return;
-      }
-
-      // 4. Parse model code + prompt
-      let modelCode = '', prompt = rawResponse;
-      const lines = rawResponse.split('\n');
-      if (lines[0].startsWith('MODEL_CODE:')) {
-        modelCode = lines[0].replace('MODEL_CODE:', '').trim();
-        prompt = lines.slice(1).join('\n').trim();
-      }
-
-      // 5. Save to Supabase
       const newRow = { collection, filename, model_code: modelCode, prompt, cad_image_url: cadUrl, result_url: '' };
-      const { error: saveErr } = await dbAdmin.from('garments').upsert(newRow, { on_conflict: 'collection,filename' });
-      if (saveErr) { resetAddCardWithError(addCard, collection, 'Save failed: ' + saveErr.message); return; }
+      const { error } = await dbAdmin.from('garments').upsert(newRow, { on_conflict: 'collection,filename' });
 
-      // 6. Add card to grid
+      const addCard = document.getElementById(`add-card-${collection}`);
+      if (error) { resetAddCardWithError(addCard, collection, 'Save failed: ' + error.message); return; }
+
       const g = { ...newRow, cache_key: `${collection}/${filename}` };
       allGarments.push(g);
       const grid = document.getElementById(`grid-${collection}`);
-      grid.insertBefore(buildCard(g), addCard);
+      const newCardEl = buildCard(g);
+      grid.insertBefore(newCardEl, addCard);
 
       // Restore add card
+      addCard.className = 'add-card';
+      addCard.onclick = () => triggerAddGarment(collection);
+      addCard.innerHTML = `
+        <div style="text-align:center;color:#bbb;pointer-events:none;">
+          <svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="margin:0 auto 8px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+          <p style="font-size:13px;font-weight:500;">Add Garment</p>
+        </div>
+        <input type="file" id="add-input-${collection}" accept="image/*" style="display:none"
+               onchange="handleAddGarment(event,'${collection}')" />
+      `;
+    }
+
+    function cancelAddGarment(collection) {
+      const addCard = document.getElementById(`add-card-${collection}`);
       addCard.className = 'add-card';
       addCard.onclick = () => triggerAddGarment(collection);
       addCard.innerHTML = `
